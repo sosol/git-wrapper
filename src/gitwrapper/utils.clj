@@ -1,12 +1,16 @@
 (ns git-wrapper.core
+  (:gen-class 
+   :methods [^:static [fetchLite [String, String, String] void]])
   (:require [clojure.java.io :as io] 
             [clojure.java.shell :as shell]
             [clojure.string :as st])
   (:import [java.nio.file Files Paths CopyOption]
+           [java.util.concurrent ConcurrentLinkedQueue]
            [java.util.zip DeflaterOutputStream]))
 
-(def ^:dynamic sourcerepo nil)
-(def ^:dynamic destrepo nil)
+(def ^:dynamic *sourcerepo*  nil)
+(def ^:dynamic *destrepo* nil)
+(def ^:dynamic *files* nil)
 
 (defn substring-after
   "Returns the part of string1 that comes after the first occurrence of string2, or 
@@ -19,6 +23,14 @@
   nil if string1 does not contain string2."
   [string1 string2]
   (if (.contains string1 string2) (.substring string1 0 (.indexOf string1 string2)) nil))
+
+(defn sh
+  "Wraps clojure.java.shell sh and throws an exception if it returns an error"
+  [& args]
+  (let [result (apply shell/sh args)]
+    (if (= 0 (:exit result))
+      (:out result)
+      (throw (Exception. (:err result))))))
 
 (defn get-name
   [line]
@@ -34,7 +46,7 @@
 
 (defn get-branch-head
   [name]
-  (st/trim-newline (:out (shell/sh "git" (str "--git-dir=" sourcerepo) "rev-parse" name))))
+  (st/trim-newline (sh "git" (str "--git-dir=" *sourcerepo*) "rev-parse" name)))
 
 (defn read-tree
   [tree]
@@ -45,7 +57,7 @@
 
 (defn load-tree
   [sha]
-  (:out (shell/sh "git"  (str "--git-dir=" sourcerepo) "ls-tree" sha)))
+  (sh "git"  (str "--git-dir=" *sourcerepo*) "ls-tree" sha))
 
 (defn has?
   [sha dir]
@@ -53,7 +65,7 @@
 
 (defn read-commit
   [sha dir]
-  (let [commit (:out (shell/sh "git" (str "--git-dir=" dir) "cat-file" "-p" sha))
+  (let [commit (sh "git" (str "--git-dir=" dir) "cat-file" "-p" sha)
         c (st/split-lines commit)]
     {:self sha
      :tree (substring-after (first c) " ")
@@ -84,25 +96,25 @@
 
 (defn get-diffs
   [branchsha sourcesha]
-  (let [branch (read-commit branchsha sourcerepo)
-        source (read-commit sourcesha sourcerepo)]
+  (let [branch (read-commit branchsha *sourcerepo*)
+        source (read-commit sourcesha *sourcerepo*)]
     (accumulate-diffs (:tree branch) (:tree source) [[:top ["tree" (:tree branch) (:tree source)]]])))
 
 (defn get-commits
   ([head]
-   (if-not (has? head destrepo)
-     (get-commits head [(read-commit head sourcerepo)])
+   (if-not (has? head *destrepo*)
+     (get-commits head [(read-commit head *sourcerepo*)])
      []))
   ([head commits]
-   (if-not (has? head destrepo) 
-     (let [c (read-commit head sourcerepo)]
+   (if-not (has? head *destrepo*) 
+     (let [c (read-commit head *sourcerepo*)]
        (loop [p (:parent c) result commits]
          (if (seq (rest p)) 
-           (if-not (has? (first p) destrepo)
-             (recur (rest p) (get-commits (first p) (conj result (read-commit (first p) sourcerepo))))
+           (if-not (has? (first p) *destrepo*)
+             (recur (rest p) (get-commits (first p) (conj result (read-commit (first p) *sourcerepo*))))
              (recur (rest p) result))
-           (if-not (has? (first p) destrepo)
-             (get-commits (first p) (conj result (read-commit (first p) sourcerepo)))
+           (if-not (has? (first p) *destrepo*)
+             (get-commits (first p) (conj result (read-commit (first p) *sourcerepo*)))
              result))))
      commits)))
 
@@ -117,18 +129,29 @@
 
 (defn save-commit-object
   [sha]
-  (shell/sh "printf" "\"commit" "$(git" (str "--git-dir=" sourcerepo) "cat-file" "-p" sha "|" "wc" "-c" "|" "awk" "'{" "print" "$1" "}')\000\"" ">" (str "/tmp/" sha))
-  (shell/sh "git" (str "--git-dir=" sourcerepo) "cat-file" "-p" sha ">>" (str "/tmp/" sha))
-  (io/copy (str "/tmp/" sha) (DeflaterOutputStream. (io/output-stream (loose-object sha destrepo)))))
+  (sh "printf" "\"commit" "$(git" (str "--git-dir=" *sourcerepo*) "cat-file" "-p" sha "|" "wc" "-c" "|" "awk" "'{" "print" "$1" "}')\000\"" ">" (str "/tmp/" sha))
+  (sh "git" (str "--git-dir=" *sourcerepo*) "cat-file" "-p" sha ">>" (str "/tmp/" sha))
+  (io/copy (str "/tmp/" sha) (DeflaterOutputStream. (io/output-stream (loose-object sha *destrepo*)))))
+
+(defn rollback
+  []
+  (doseq [f (seq *files*)]
+    (when (.exists f)
+      (try 
+        (.delete f)
+        (catch Exception e
+          ;; do nothing
+          )))))
 
 (defn save-object
   [sha type]
-  (if (not (has? sha destrepo))
-    (if (.exists (loose-object sha sourcerepo)) 
-      (Files/copy (.toPath (loose-object sha sourcerepo)) (.toPath (loose-object sha destrepo)) (make-array CopyOption 0))
+  (when (not (has? sha *destrepo*))
+    (.add *files* (loose-object sha *destrepo*))
+    (if (.exists (loose-object sha *sourcerepo*)) 
+      (Files/copy (.toPath (loose-object sha *sourcerepo*)) (.toPath (loose-object sha *destrepo*)) (make-array CopyOption 0))
       (case type
-        "blob" (shell/sh "git" (str "--git-dir=" sourcerepo) "cat-file" "blob" sha "|" "git" (str "--git-dir=" destrepo) "hash-object" "-w" "--stdin")
-        "tree" (shell/sh "git" (str "--git-dir=" sourcerepo) "ls-tree" sha "|" "git" (str "--git-dir=" destrepo) "mktree" "--missing")
+        "blob" (sh "git" (str "--git-dir=" *sourcerepo*) "cat-file" "blob" sha "|" "git" (str "--git-dir=" *destrepo*) "hash-object" "-w" "--stdin")
+        "tree" (sh "git" (str "--git-dir=" *sourcerepo*) "ls-tree" sha "|" "git" (str "--git-dir=" *destrepo*) "mktree" "--missing")
         "commit" (save-commit-object sha)))))
 
 (defn remote-name
@@ -137,31 +160,25 @@
 
 (defn update-ref
   [sha ref]
-  (shell/sh "git" (str "--git-dir=" destrepo) "update-ref" (str "refs/heads/" (substring-after (remote-name sourcerepo) "/") ref) sha))
+  (sh "git" (str "--git-dir=" *destrepo*) "update-ref" (str "refs/heads/" (substring-after (remote-name *sourcerepo*) "/") "/" ref) sha))
 
-(defn fetch-lite
+(defn -fetchLite
   [branch source dest]
-  (binding [sourcerepo source destrepo dest] 
+  (binding [*sourcerepo* source *destrepo* dest *files* (ConcurrentLinkedQueue.)] 
     (let [head (get-branch-head branch)
           commits (get-commits head)
           desthead (first (:parent (last commits)))
-          objects (loop [c commits objects []] ;;TODO Bug if no commits retrieved
-                    (if (seq (rest c))
-                      (recur (rest c) (concat (concat objects (get-diffs (:self (first c)) desthead))))
-                      (concat (concat objects (get-diffs (:self (first c)) desthead)))))]
-      ;;(prn objects)
-      ;; write blobs
-      (doseq [blob (filter #(= (first (second %)) "blob") objects)]
-        (prn (second (second blob)))
-        (save-object (second (second blob)) "blob"))
-      ;; write trees
-      (doseq [tree (filter #(= (first (second %)) "tree") objects)]
-        (prn (second (second tree)))
-        (save-object (second (second tree)) "tree"))
-      ;; copy commits as loose objects
-      (doseq [commit commits]
-        (prn (:self commit))
-        (save-object (:self commit) "commit"))
-      (update-ref head branch))))
+          objects (when commits ;; If there are no commits, do nothing
+                    (loop [c commits objects []] 
+                      (if (seq (rest c))
+                        (recur (rest c) (concat (concat objects (get-diffs (:self (first c)) desthead))))
+                        (concat (concat objects (get-diffs (:self (first c)) desthead))))))]
+      (try
+        (dorun (pmap #(save-object (second (second %)) (first (second %))) objects))
+        (dorun (pmap #(save-object (:self %) "commit") commits))
+        (update-ref head branch)
+        (catch Exception e
+          (rollback)
+          (throw e))))))
 
 
