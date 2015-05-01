@@ -1,4 +1,4 @@
-(ns git-wrapper.core
+(ns gitwrapper.utils
   (:gen-class 
    :methods [^:static [fetchLite [String, String, String] void]])
   (:require [clojure.java.io :as io] 
