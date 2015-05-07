@@ -1,6 +1,7 @@
 (ns gitwrapper.utils
   (:gen-class 
-   :methods [^:static [fetchLite [String, String, String] void]])
+   :methods [^:static [fetchLite [String, String, String, String] void]]
+            [^:static [getBranchHead [String, String] String]])
   (:require [clojure.java.io :as io] 
             [clojure.java.shell :as shell]
             [clojure.string :as st])
@@ -44,16 +45,19 @@
   [line]
   (.substring line 12 52))
 
-(defn get-branch-head
-  [name]
-  (st/trim-newline (sh "git" (str "--git-dir=" *sourcerepo*) "rev-parse" name)))
+(defn -getLastCommit
+  [file branch repo])
+
+(defn -getBranchHead
+  [name repo]
+  (st/trim-newline (sh "git" (str "--git-dir=" repo) "rev-parse" name)))
 
 (defn read-tree
   [tree]
   (loop [lines (seq tree) result {(get-name (first lines)) [(get-type (first lines)) (get-hash (first lines))]}]
     (if (seq (rest lines))
       (recur (rest lines) (assoc result (get-name (first lines)) [(get-type (first lines)) (get-hash (first lines))]))
-      result)))
+      (assoc result (get-name (first lines)) [(get-type (first lines)) (get-hash (first lines))]))))
 
 (defn load-tree
   [sha]
@@ -163,9 +167,9 @@
   (sh "git" (str "--git-dir=" *destrepo*) "update-ref" (str "refs/heads/" (substring-after (remote-name *sourcerepo*) "/") "/" ref) sha))
 
 (defn -fetchLite
-  [branch source dest]
+  [branch newbranch source dest]
   (binding [*sourcerepo* source *destrepo* dest *files* (ConcurrentLinkedQueue.)] 
-    (let [head (get-branch-head branch)
+    (let [head (-getBranchHead branch source)
           commits (get-commits head)
           desthead (first (:parent (last commits)))
           objects (when commits ;; If there are no commits, do nothing
@@ -176,7 +180,7 @@
       (try
         (dorun (pmap #(save-object (second (second %)) (first (second %))) objects))
         (dorun (pmap #(save-object (:self %) "commit") commits))
-        (update-ref head branch)
+        (update-ref head newbranch)
         (catch Exception e
           (rollback)
           (throw e))))))
