@@ -1,6 +1,6 @@
 (ns gitwrapper.utils
   (:gen-class 
-   :methods [^:static [fetchLite [String, String, String] void]])
+   :methods [^:static [fetchLite [String, String, String, String] void]])
   (:require [clojure.java.io :as io] 
             [clojure.java.shell :as shell]
             [clojure.string :as st])
@@ -160,10 +160,10 @@
 
 (defn update-ref
   [sha ref]
-  (sh "git" (str "--git-dir=" *destrepo*) "update-ref" (str "refs/heads/" (substring-after (remote-name *sourcerepo*) "/") "/" ref) sha))
+  (sh "git" (str "--git-dir=" *destrepo*) "update-ref" (str "refs/heads/" ref) sha))
 
 (defn -fetchLite
-  [branch source dest]
+  [branch newbranch source dest]
   (binding [*sourcerepo* source *destrepo* dest *files* (ConcurrentLinkedQueue.)] 
     (let [head (get-branch-head branch)
           commits (get-commits head)
@@ -176,7 +176,7 @@
       (try
         (dorun (pmap #(save-object (second (second %)) (first (second %))) objects))
         (dorun (pmap #(save-object (:self %) "commit") commits))
-        (update-ref head branch)
+        (update-ref head newbranch)
         (catch Exception e
           (rollback)
           (throw e))))))
