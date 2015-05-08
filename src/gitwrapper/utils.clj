@@ -39,11 +39,13 @@
 
 (defn get-type
   [line]
-  (.substring line 7 11))
+  (when (> (.length line) 10) 
+    (.substring line 7 11)))
 
 (defn get-hash
   [line]
-  (.substring line 12 52))
+  (when (> (.length line) 51) 
+    (.substring line 12 52)))
 
 (defn -getLastCommit
   [file branch repo])
@@ -90,13 +92,15 @@
 
 (defn accumulate-diffs
   [newsha basesha diffs]
-  (if (= "blob" (first (second (last diffs))))
-    diffs
-    (let [diff (diff-trees newsha basesha)]
-       (loop [d diff result diffs]
-         (if (seq (rest d))
-           (recur (rest d) (conj result (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj diffs (first d)))))
-           (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj diffs (first d))))))))
+  (if-not (nil? (first (last diffs))) 
+    (if (= "blob" (first (second (last diffs))))
+      diffs
+      (let [diff (diff-trees newsha basesha)]
+        (loop [d diff result diffs]
+          (if (seq (rest d))
+            (recur (rest d) (conj result (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj diffs (first d)))))
+            (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj diffs (first d)))))))
+    (drop-last diffs)))
 
 (defn get-diffs
   [branchsha sourcesha]
