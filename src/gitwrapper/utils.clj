@@ -1,7 +1,6 @@
 (ns gitwrapper.utils
   (:gen-class 
-   :methods [^:static [fetchLite [String, String, String, String] void]]
-            [^:static [getBranchHead [String, String] String]])
+   :methods [^:static [fetchLite [String, String, String, String] void]])
   (:require [clojure.java.io :as io] 
             [clojure.java.shell :as shell]
             [clojure.string :as st])
@@ -168,7 +167,7 @@
 
 (defn update-ref
   [sha ref]
-  (sh "git" (str "--git-dir=" *destrepo*) "update-ref" (str "refs/heads/" (substring-after (remote-name *sourcerepo*) "/") "/" ref) sha))
+  (sh "git" (str "--git-dir=" *destrepo*) "update-ref" (str "refs/heads/" ref) sha))
 
 (defn -fetchLite
   [branch newbranch source dest]
