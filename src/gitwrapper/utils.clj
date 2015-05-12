@@ -155,9 +155,13 @@
   (when (not (has? sha *destrepo*))
     (.add *files* (loose-object sha *destrepo*))
     (if (.exists (loose-object sha *sourcerepo*))
-      (do
-        (.mkdirs (java.io.File. (.getParent (loose-object sha *destrepo*))))
-        (Files/copy (.toPath (loose-object sha *sourcerepo*)) (.toPath (loose-object sha *destrepo*)) (make-array CopyOption 0)))
+      (if (not (.exists (loose-object sha *destrepo*)))
+        (do
+          (if (not (.exists (.getParentFile (loose-object sha *destrepo*))))
+            (.mkdirs (.getParentFile (loose-object sha *destrepo*))))
+          (try
+            (Files/copy (.toPath (loose-object sha *sourcerepo*)) (.toPath (loose-object sha *destrepo*)) (make-array CopyOption 0))
+            (catch java.nio.file.FileAlreadyExistsException e (.getMessage e)))))
       (case type
         "blob" (sh "git" (str "--git-dir=" *sourcerepo*) "cat-file" "blob" sha "|" "git" (str "--git-dir=" *destrepo*) "hash-object" "-w" "--stdin")
         "tree" (sh "git" (str "--git-dir=" *sourcerepo*) "ls-tree" sha "|" "git" (str "--git-dir=" *destrepo*) "mktree" "--missing")
