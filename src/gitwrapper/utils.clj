@@ -1,6 +1,7 @@
 (ns gitwrapper.utils
   (:gen-class 
    :methods [^:static [fetchLite [String, String, String, String] void]])
+
   (:require [clojure.java.io :as io] 
             [clojure.java.shell :as shell]
             [clojure.string :as st])
@@ -181,7 +182,7 @@
     (let [head (-getBranchHead branch source)
           commits (get-commits head)
           desthead (first (:parent (last commits)))
-          objects (when commits ;; If there are no commits, do nothing
+          objects (when desthead ;; If there are no commits, do nothing
                     (loop [c commits objects []] 
                       (if (seq (rest c))
                         (recur (rest c) (concat (concat objects (get-diffs (:self (first c)) desthead))))
