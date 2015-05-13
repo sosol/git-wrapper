@@ -82,7 +82,7 @@
 (defn diff-trees
   "Takes two tree sha hashes and outputs a vector of type/hash pairs representing lines where 'new' is different or has additional data from 'base'."
   [newtree basetree]
-  (prn (str newtree " " basetree))  (let [t1 (when newtree (read-tree (st/split-lines (load-tree newtree))))
+  (let [t1 (when newtree (read-tree (st/split-lines (load-tree newtree))))
         t2 (when basetree (read-tree (st/split-lines (load-tree basetree))))
         diffs (select-keys t1 (filter #(or (not (contains? t2 %)) (not= (second (t2 %)) (second (t1 %)))) (keys t1)))]
     (loop [k (keys diffs) result {(first k) (conj (diffs (first k)) (second (get t2 (first k))))}]
