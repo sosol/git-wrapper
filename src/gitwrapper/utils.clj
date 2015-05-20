@@ -182,7 +182,7 @@
     (let [head (-getBranchHead branch source)
           commits (get-commits head)
           desthead (first (:parent (last commits)))
-          objects (when desthead ;; If there are no commits, do nothing
+          objects (when (or commits (= head desthead)) ;; If there are no commits, do nothing
                     (loop [c commits objects []] 
                       (if (seq (rest c))
                         (recur (rest c) (concat (concat objects (get-diffs (:self (first c)) desthead))))
