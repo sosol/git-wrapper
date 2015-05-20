@@ -85,10 +85,10 @@
   (let [t1 (when newtree (read-tree (st/split-lines (load-tree newtree))))
         t2 (when basetree (read-tree (st/split-lines (load-tree basetree))))
         diffs (select-keys t1 (filter #(or (not (contains? t2 %)) (not= (second (t2 %)) (second (t1 %)))) (keys t1)))]
-    (loop [k (keys diffs) result {(first k) (conj (diffs (first k)) (second (get t2 (first k))))}]
+    (loop [k (keys diffs) result {}]
       (if (seq (rest k))
         (recur (rest k) (assoc result (first k) (conj (diffs (first k)) (second (get t2 (first k))))))
-        result))))
+        (assoc result (first k) (conj (diffs (first k)) (second (get t2 (first k)))))))))
 
 (defn accumulate-diffs
   [newsha basesha diffs]
