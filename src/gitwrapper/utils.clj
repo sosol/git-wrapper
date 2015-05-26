@@ -91,22 +91,24 @@
         (assoc result (first k) (conj (diffs (first k)) (second (get t2 (first k)))))))))
 
 (defn accumulate-diffs
-  [newsha basesha diffs]
-  (if-not (nil? (first (last diffs))) 
-    (if (= "blob" (first (second (last diffs))))
-      diffs
-      (let [diff (diff-trees newsha basesha)]
-        (loop [d diff result diffs]
-          (if (seq (rest d))
-            (recur (rest d) (conj result (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj diffs (first d)))))
-            (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj diffs (first d)))))))
-    (drop-last diffs)))
+  [newsha basesha *diffs]
+    (let [diff (diff-trees newsha basesha)]
+      (loop [d diff]
+        (if (seq (rest d))
+          (do
+            (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj! *diffs (first d)))
+            (recur (rest d)))
+          (if-not (nil? (first (first d)))
+            (if (= "blob" (first (second (first d))))
+              (conj! *diffs (first d))
+              (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj! *diffs (first d))))
+            *diffs)))))
 
 (defn get-diffs
   [branchsha sourcesha]
   (let [branch (read-commit branchsha *sourcerepo*)
         source (read-commit sourcesha *sourcerepo*)]
-    (accumulate-diffs (:tree branch) (:tree source) [[:top ["tree" (:tree branch) (:tree source)]]])))
+    (persistent! (let [*diffs (transient [[:top ["tree" (:tree branch) (:tree source)]]])] (accumulate-diffs (:tree branch) (:tree source) *diffs)))))
 
 (defn get-commits
   ([head]
