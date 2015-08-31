@@ -31,7 +31,7 @@
   (let [result (apply shell/sh args)]
     (if (= 0 (:exit result))
       (:out result)
-      (throw (Exception. (:err result))))))
+      (throw (Exception. (str (:err result) "\n\nExecuting " (st/join " " args)))))))
 
 (defn get-name
   [line]
