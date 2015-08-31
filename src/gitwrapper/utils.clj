@@ -190,8 +190,12 @@
                         (recur (rest c) (concat (concat objects (get-diffs (:self (first c)) desthead))))
                         (concat (concat objects (get-diffs (:self (first c)) desthead))))))]
       (try
-        (dorun (pmap #(save-object (second (second %)) (first (second %))) objects))
-        (dorun (pmap #(save-object (:self %) "commit") commits))
+        (doseq [object objects]
+          (save-object (second (second object)) (first (second object))))
+        (doseq [commit commits]
+          (save-object (:self commit)))
+        ;; (dorun (pmap #(save-object (second (second %)) (first (second %))) objects))
+        ;; (dorun (pmap #(save-object (:self %) "commit") commits))
         (update-ref head newbranch)
         (catch Exception e
           (rollback)
