@@ -201,4 +201,5 @@
           (rollback)
           (throw e))))))
 
-
+(defn -main [& args]
+  (apply -fetchLite args))
