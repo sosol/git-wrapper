@@ -1,11 +1,12 @@
 (ns gitwrapper.utils
-  (:gen-class 
+  (:gen-class
    :methods [^:static [fetchLite [String, String, String, String] void]])
 
-  (:require [clojure.java.io :as io] 
+  (:require [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as st])
-  (:import [java.nio.file Files Paths CopyOption]
+  (:import [java.io File]
+           [java.nio.file Files Paths CopyOption]
            [java.util.concurrent ConcurrentLinkedQueue]
            [java.util.zip DeflaterOutputStream]))
 
@@ -14,24 +15,42 @@
 (def ^:dynamic *files* nil)
 
 (defn substring-after
-  "Returns the part of string1 that comes after the first occurrence of string2, or 
+  "Returns the part of string1 that comes after the first occurrence of string2, or
   nil if string1 does not contain string2."
   [string1 string2]
   (if (.contains string1 string2) (.substring string1 (+ (.indexOf string1 string2) (.length string2))) nil))
 
 (defn substring-before
-   "Returns the part of string1 that comes before the first occurrence of string2, or 
+   "Returns the part of string1 that comes before the first occurrence of string2, or
   nil if string1 does not contain string2."
   [string1 string2]
   (if (.contains string1 string2) (.substring string1 0 (.indexOf string1 string2)) nil))
 
+(defn read-output
+  "Reads the given InputStream into a String and returns it if not empty.
+   Used by the (sh) function for output."
+  [is]
+  (let [buffer (char-array 1000)
+        sb (StringBuilder.)]
+        (with-open [rdr (io/reader is)]
+          (loop [r (.read rdr buffer)]
+            (if (> r -1)
+              (do
+                (.append sb buffer 0 r)
+                (recur (.read rdr buffer)))))
+          (when (> (.length sb) 0)
+            (.toString sb)))))
+
 (defn sh
-  "Wraps clojure.java.shell sh and throws an exception if it returns an error"
+  "Executes the given shell command and throws an exception if it returns an error.
+   stderr is discarded, so retry the failing call in a shell if it doesn't work."
   [& args]
-  (let [result (apply shell/sh args)]
-    (if (= 0 (:exit result))
-      (:out result)
-      (throw (Exception. (str (:err result) "\n\nExecuting " (st/join " " args)))))))
+  (let [pb (ProcessBuilder. (into-array String args))]
+    (.redirectError pb (File. "/dev/null"))
+    (let [p (.start pb)]
+      (if (= 0 (.waitFor p))
+        (read-output (.getInputStream p))
+        (throw (Exception. (str "Error executing " (st/join " " args))))))))
 
 (defn get-name
   [line]
@@ -39,12 +58,12 @@
 
 (defn get-type
   [line]
-  (when (> (.length line) 10) 
+  (when (> (.length line) 10)
     (.substring line 7 11)))
 
 (defn get-hash
   [line]
-  (when (> (.length line) 51) 
+  (when (> (.length line) 51)
     (.substring line 12 52)))
 
 (defn -getLastCommit
@@ -75,8 +94,8 @@
         c (st/split-lines commit)]
     {:self sha
      :tree (substring-after (first c) " ")
-     :parent (if (.startsWith (nth c 2) "parent") 
-               [(substring-after (second c) " ") (substring-after (nth c 2) " ")] 
+     :parent (if (.startsWith (nth c 2) "parent")
+               [(substring-after (second c) " ") (substring-after (nth c 2) " ")]
                [(substring-after (second c) " ")])}))
 
 (defn diff-trees
@@ -116,10 +135,10 @@
      (get-commits head [(read-commit head *sourcerepo*)])
      []))
   ([head commits]
-   (if-not (has? head *destrepo*) 
+   (if-not (has? head *destrepo*)
      (let [c (read-commit head *sourcerepo*)]
        (loop [p (:parent c) result commits]
-         (if (seq (rest p)) 
+         (if (seq (rest p))
            (if-not (has? (first p) *destrepo*)
              (recur (rest p) (get-commits (first p) (conj result (read-commit (first p) *sourcerepo*))))
              (recur (rest p) result))
@@ -147,7 +166,7 @@
   []
   (doseq [f (seq *files*)]
     (when (.exists f)
-      (try 
+      (try
         (.delete f)
         (catch Exception e
           ;; do nothing
@@ -180,12 +199,12 @@
 
 (defn -fetchLite
   [branch newbranch source dest]
-  (binding [*sourcerepo* source *destrepo* dest *files* (ConcurrentLinkedQueue.)] 
+  (binding [*sourcerepo* source *destrepo* dest *files* (ConcurrentLinkedQueue.)]
     (let [head (-getBranchHead branch source)
           commits (get-commits head)
           desthead (first (:parent (last commits)))
           objects (when-not (empty? commits) ;; If there are no commits, do nothing
-                    (loop [c commits objects []] 
+                    (loop [c commits objects []]
                       (if (seq (rest c))
                         (recur (rest c) (concat (concat objects (get-diffs (:self (first c)) desthead))))
                         (concat (concat objects (get-diffs (:self (first c)) desthead))))))]
