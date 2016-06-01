@@ -38,8 +38,7 @@
               (do
                 (.append sb buffer 0 r)
                 (recur (.read rdr buffer)))))
-          (when (> (.length sb) 0)
-            (.toString sb)))))
+            (.toString sb))))
 
 (defn sh
   "Executes the given shell command and throws an exception if it returns an error.
