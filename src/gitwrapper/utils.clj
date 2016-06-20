@@ -114,7 +114,9 @@
       (loop [d diff]
         (if (seq (rest d))
           (do
-            (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj! *diffs (first d)))
+            (if (= "blob" (first (second (first d))))
+              (conj! *diffs (first d))
+              (accumulate-diffs (second (second (first d))) (nth (second (first d)) 2) (conj! *diffs (first d))))
             (recur (rest d)))
           (if-not (nil? (first (first d)))
             (if (= "blob" (first (second (first d))))
